@@ -85,6 +85,7 @@ app.get('/leads', async (req, res) => {
         // const { access_token } = req.query;
         // Get access token from tokens.txt
         const access_token = Auth.getTokenFromFile('access');
+        if (!access_token) return res.status(401).json({ message: 'Access token not found. Please authenticate the app first. (It is a one time step.)' });
         const lawcus = new LawcusAPI(access_token);
         const response = await lawcus.getLeads();
         if (response.status === 200) {
@@ -102,6 +103,7 @@ app.post('/leads', async (req, res) => {
     try {
         const { lead_data } = req.body;
         const access_token = Auth.getTokenFromFile('access');
+        if (!access_token) return res.status(401).json({ message: 'Access token not found. Please authenticate the app first. (It is a one time step.)' });
         // Check Lead Data Validation
         if (!validateLead(lead_data)) {
             return res.status(400).json({ message: 'Invalid lead data' });
@@ -135,18 +137,6 @@ function validateLead(data) {
         console.error('Invalid contact type:', data.contact_type);
         return false;
     }
-    // Email should be a valid email format
-    // const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    // if (!emailRegex.test(data.contact_email)) {
-    //     console.error('Invalid email format:', data.contact_email);
-    //     return false;
-    // }
-    // Phone should be a valid phone format
-    // const phoneRegex = /^\+?[1-9]\d{1,14}$/; // E.164 format
-    // if (!phoneRegex.test(data.contact_phone)) {
-    //     console.error('Invalid phone format:', data.contact_phone);
-    //     return false;
-    // }
     return true;
 }
 

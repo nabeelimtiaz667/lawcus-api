@@ -1,9 +1,14 @@
 const fs = require('fs');
 
 class Auth {
+    constructor() {
+        this.tokensFile = 'tokens.txt';
+    }
+
     getTokenFromFile(tokenType) {
         try {
-            const tokens = fs.readFileSync('tokens.txt', 'utf-8');
+            if (!fs.existsSync(this.tokensFile)) return null;
+            const tokens = fs.readFileSync(this.tokensFile, 'utf-8');
             if (tokenType === 'access') {
                 return tokens.match(/Access Token: (\S+)/)[1];
             } else if (tokenType === 'refresh') {
@@ -18,7 +23,7 @@ class Auth {
     }
     saveTokens(accessToken, refreshToken) {
         try {
-            fs.writeFileSync('tokens.txt', `Access Token: ${accessToken}\nRefresh Token: ${refreshToken}`);
+            fs.writeFileSync(this.tokensFile, `Access Token: ${accessToken}\nRefresh Token: ${refreshToken}`);
         } catch (error) {
             console.error(`Error writing tokens to file: ${error.message}`);
         }
