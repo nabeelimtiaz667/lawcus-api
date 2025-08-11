@@ -2,11 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const LawcusAPI = require('./lawcus.js'); // Assuming lawcus.js exports LawcusAPI
+const fs = require('fs');
+const Auth = require('./auth.js'); // Assuming auth.js exports Auth
+const cron = require('node-cron');
 
 require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3010;
 
 app.use(cors());
 app.use(express.json());
@@ -15,7 +18,7 @@ app.use(express.json());
 app.get('/', (req, res) => {
     const clientId = process.env.CLIENT_ID;
     const redirectUri = process.env.REDIRECT_URI;
-    const authUrl = `https://auth.lawcus.com/auth?response_type=code&state=&client_id=${process.env.CLIENT_ID}&scope=&redirect_uri=${process.env.REDIRECT_URI}`;
+    const authUrl = `https://auth.lawcus.com/auth?response_type=code&state=&client_id=${clientId}&scope=&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
     res.redirect(authUrl);
 });
@@ -34,6 +37,9 @@ app.get('/oauth', async (req, res) => {
         })
         if (auth.status === 200) {
             const data = auth.data;
+            const { access_token, refresh_token } = data;
+            // Store in a text file
+            Auth.saveTokens(access_token, refresh_token);
             res.status(200).json({ ...data });
         } else {
             res.status(auth.status).json({ message: auth.statusText });
@@ -46,10 +52,10 @@ app.get('/oauth', async (req, res) => {
 })
 
 // Referesh token
-app.post('/oauth/refresh', async (req, res) => {
+app.get('/oauth/refresh', async (req, res) => {
     try {
-        // Fetch code from query parameters
-        const { refresh_token } = req.body;
+        // Get refresh token from tokens.txt
+        const refresh_token = Auth.getTokenFromFile('refresh');
         const auth = await axios.post("https://auth.lawcus.com/oauth/token", {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
@@ -59,6 +65,9 @@ app.post('/oauth/refresh', async (req, res) => {
         })
         if (auth.status === 200) {
             const data = auth.data;
+            const { access_token, refresh_token } = data;
+            // Store in a text file
+            Auth.saveTokens(access_token, refresh_token);
             res.status(200).json({ ...data });
         } else {
             res.status(auth.status).json({ message: auth.statusText });
@@ -73,7 +82,9 @@ app.post('/oauth/refresh', async (req, res) => {
 // List contacts
 app.get('/leads', async (req, res) => {
     try {
-        const { access_token } = req.query;
+        // const { access_token } = req.query;
+        // Get access token from tokens.txt
+        const access_token = Auth.getTokenFromFile('access');
         const lawcus = new LawcusAPI(access_token);
         const response = await lawcus.getLeads();
         if (response.status === 200) {
@@ -89,13 +100,14 @@ app.get('/leads', async (req, res) => {
 // Generate Leads
 app.post('/leads', async (req, res) => {
     try {
-        const { access_token, lead_data } = req.body;
+        const { lead_data } = req.body;
+        const access_token = Auth.getTokenFromFile('access');
         // Check Lead Data Validation
         if (!validateLead(lead_data)) {
             return res.status(400).json({ message: 'Invalid lead data' });
         }
         console.log(`${lead_data.contact_first_name}`);
-        var dump = `{\n   "contact_first_name": "${lead_data.contact_first_name}",\n    "contact_last_name": "${lead_data.contact_last_name}",\n    "contact_type": "${lead_data.contact_type}",\n    "contact_email": "${lead_data.contact_email}",\n    "contact_phone": "${lead_data.contact_phone}",\n    "contact_city": "${lead_data.contact_city}",\n    "contact_state": "${lead_data.contact_state}"\n}`;
+        var dump = `{\n   "contact_first_name": "${lead_data.contact_first_name}",\n    "contact_last_name": "${lead_data.contact_last_name}",\n    "contact_type": "${lead_data.contact_type}",\n    "contact_email": "${lead_data.contact_email}",\n    "contact_phone": "${lead_data.contact_phone}",\n    "contact_city": "${lead_data.contact_city}",\n    "contact_state": "${lead_data.contact_state}",\n    "matter_description": "${lead_data.matter_description}"\n}`;
         const lawcus = new LawcusAPI(access_token);
         const response = await lawcus.createLead(dump);
         if (response.status === 200) {
@@ -111,7 +123,7 @@ app.post('/leads', async (req, res) => {
 function validateLead(data) {
     // The lead data should contain the following fields:
     // First Name, Last Name, Email, Phone, City, State
-    const requiredFields = ['contact_first_name', 'contact_last_name', 'contact_email', 'contact_type', 'contact_phone', 'contact_city', 'contact_state'];
+    const requiredFields = ['contact_first_name', 'contact_last_name', 'contact_email', 'contact_type', 'contact_phone', 'contact_city', 'contact_state', 'matter_description'];
     for (const field of requiredFields) {
         if (!data[field]) {
             console.error(`Missing required field: ${field}`);
@@ -124,17 +136,17 @@ function validateLead(data) {
         return false;
     }
     // Email should be a valid email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(data.contact_email)) {
-        console.error('Invalid email format:', data.contact_email);
-        return false;
-    }
+    // const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // if (!emailRegex.test(data.contact_email)) {
+    //     console.error('Invalid email format:', data.contact_email);
+    //     return false;
+    // }
     // Phone should be a valid phone format
-    const phoneRegex = /^\+?[1-9]\d{1,14}$/; // E.164 format
-    if (!phoneRegex.test(data.contact_phone)) {
-        console.error('Invalid phone format:', data.contact_phone);
-        return false;
-    }
+    // const phoneRegex = /^\+?[1-9]\d{1,14}$/; // E.164 format
+    // if (!phoneRegex.test(data.contact_phone)) {
+    //     console.error('Invalid phone format:', data.contact_phone);
+    //     return false;
+    // }
     return true;
 }
 
@@ -148,6 +160,32 @@ function catchError(error) {
         return { status: 500, message: 'Internal Server Error' };
     }
 }
+
+cron.schedule('*/50 * * * *', async () => {
+    console.log('Refreshing access token...');
+    try {
+        // Get refresh token from tokens.txt
+        const refresh_token = Auth.getTokenFromFile('refresh');
+        const auth = await axios.post("https://auth.lawcus.com/oauth/token", {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": process.env.CLIENT_ID,
+            "client_secret": process.env.CLIENT_SECRET,
+            "redirect_uri": process.env.REDIRECT_URI
+        })
+        if (auth.status === 200) {
+            const data = auth.data;
+            const { access_token, refresh_token } = data;
+            // Store in a text file
+            Auth.saveTokens(access_token, refresh_token);
+            console.log(data);
+        } else {
+            console.error({ status: auth.status, message: auth.statusText });
+        }
+    } catch (error) {
+        console.error('Token refresh failed:', error.message);
+    }
+});
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
